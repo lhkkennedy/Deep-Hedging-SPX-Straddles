@@ -1,536 +1,192 @@
-# Deep Hedging under Lifted Heston
+# Deep Hedging SPX Straddles
 
-MSc dissertation research project on **deep hedging delta-hedged ATM SPX straddles under lifted Heston**, with a focus on variance risk premium capture, transaction costs, volatility-state representation, and machine-learning hedging policies.
+### Simulation pretraining, market fine-tuning and maturity pooling under Heston and lifted Heston
 
-This repository contains the notebook pipeline for calibrating classical Heston and lifted Heston models, generating hedging experiment seeds, training and evaluating learned hedge policies, running robustness checks, and connecting the simulated hedging results back to a realistic 30-day ATM straddle strategy setting.
+**MSc Finance and Machine Learning dissertation | Queen Mary University of London | 2026**  
+**Dissertation grade: 92/100** · Selected as the School of Economics and Finance's best dissertation for nomination to the **Worshipful Company of International Bankers Prize**
 
-> **Note on filenames:** the exact filenames in this README may differ from the final repository names. The dissertation notebooks went through several versioned iterations, because naturally the only thing more unstable than stochastic volatility is notebook naming. The intended logical structure is stable even if filenames are later cleaned up.
+> **Research question:** Can neural hedging policies reduce the terminal risk of short S&P 500 straddles relative to conventional delta hedging when rebalancing is discrete, costly and constrained by information available at the decision time?
 
-## Project aim
+This project investigates **cost-aware, daily hedging of short, near-at-the-money S&P 500 index (SPX) straddles**. It combines stochastic-volatility simulation, neural-network training, historical option-market evaluation and a controlled comparison of three design choices:
 
-The project investigates whether machine-learning-based hedging can improve the practical performance of near-ATM SPX index straddles when volatility is stochastic and transaction costs are present.
+1. **Training distribution:** market-only learning versus pretraining on Black–Scholes, Heston or lifted-Heston paths.
+2. **Market adaptation:** no fine-tuning versus output-layer or full-network fine-tuning after simulation pretraining.
+3. **Sharing information across maturities:** a dedicated one-month model, a fully shared model, or shared hidden layers with maturity-specific output heads.
 
-The central idea is to compare learned hedge policies against simpler benchmark hedge rules in both:
+The main result is a **16.3% reduction in premium-normalised mean squared hedging error** for the leading neural policy compared with Black–Scholes delta at an assumed **1 basis point (bp) of proportional underlying trading cost**. The result is economically nuanced: **average P&L worsens, turnover and trading costs increase, and the improvement is not statistically confirmed across annual evaluation periods**. The work therefore identifies a potential form of **tail-error compression at a cost**, not a demonstrated improvement in risk-adjusted trading profitability.
 
-- a **classical Heston world**, with a single variance state;
-- a **lifted Heston world**, which uses a finite-factor Markovian approximation to rougher volatility dynamics.
+**Scope:** This README describes the *final submitted dissertation* and the recovered July–August 2026 research artifacts. It supersedes descriptions of earlier, simulation-only and intraday experiments. The public repository's existing large notebook is an earlier research iteration; it should not be treated as the implementation supporting the final figures until the final notebooks are curated and added. **This is a research archive, not a production trading system or a one-command reproducibility package.**
 
-The key research question is whether richer volatility-state information improves cost-aware hedging performance, especially when the strategy is exposed to variance risk premium, trading frictions, and downside risk.
+---
 
-## Research hypotheses
+## Key results
 
-The empirical work is built around three main hypotheses:
+The leading policy is a **fully pooled, lifted-Heston-pretrained neural hedge, without subsequent market fine-tuning**. Its risk metrics are measured over historical out-of-sample straddle episodes using the same terminal accounting rules as the benchmark.
 
-1. **Deep hedging improves cost-adjusted performance relative to standard delta hedging.**
-2. **The gain from learned hedging is larger under lifted Heston than under classical Heston.**
-3. **The marginal benefit of more frequent rebalancing declines once transaction costs are introduced.**
+| Metric at 1 bp stock-trading cost | Leading neural hedge | Black–Scholes delta |
+|---|---:|---:|
+| Premium-normalised MSE ↓ | **0.154984** | 0.185212 |
+| Premium-normalised RMSE ↓ | **0.393680** | 0.430362 |
+| Premium-normalised expected shortfall, ES95 ↓ | **0.780805** | 0.840251 |
+| Mean stock turnover per episode ↓ | 3.573 | **3.428** |
+| Mean realised stock-trading cost (SPX points) ↓ | 3.842 | **3.794** |
 
-The project also asks whether lifted Heston can act as a tractable bridge between classical Heston and rougher non-Markovian volatility models for machine-learning hedging experiments.
+**Interpretation:** Lower MSE does **not** mean 16.3% higher returns, and it is not a 16.3% reduction in RMSE. MSE penalises large errors quadratically. In the dissertation's paired accounting decomposition, the leading policy has approximately **4.765 SPX points lower mean terminal P&L** than Black–Scholes delta. The additional commissions are comparatively small; different stock-hedging gains explain most of that P&L gap.
 
-## Repository structure
+### Where did the reduction in squared error come from?
 
-A cleaned final repo should look roughly like this:
+The pooled episode-level decomposition of the neural-minus-Black–Scholes MSE difference shows:
 
-```text
-.
-├── README.md
-├── .gitignore
-├── .gitattributes
-├── Part_A_Calibration.ipynb
-├── Part_B_Deep_Hedging.ipynb
-├── Part_C_Robustness_Checks.ipynb
-├── part_D_Strategy_Backtest.ipynb
-├── docs/
-│   ├── Dissertation_Proposal.docx
-│   ├── Progress_Report_19-04.docx
-│   ├── results_and_progress_report.docx
-│   ├── progress_report_update_since_19-04.md
-│   └── dissertation_results_section.md
-├── data/
-│   ├── README.md
-│   └── sample/
-└── outputs/
-    └── README.md
-```
+| Component | Contribution to MSE difference |
+|---|---:|
+| Reduction in hedging-error variance | −0.030451 |
+| Increase in squared bias | +0.002023 |
+| **Net reduction in MSE** | **−0.028428** |
 
-In the current working version, some notebooks and outputs may use versioned names such as:
+Nearly all the improvement is attributable to reducing large squared errors. The worst **5% of episodes ranked by baseline squared error** contribute approximately **−0.030599** to the MSE difference, while the remaining 95% contribute **+0.002172**. The effect resembles paying a small performance cost in ordinary conditions to compress unusually large *absolute* hedging errors; it does **not** by itself demonstrate protection against one-sided downside losses.
 
-```text
-part_A_v16_short_and_wide_fiterrorfix.ipynb
-part_B_v9_short_and_wide.ipynb
-part_C_sell_side_credibility_audit.ipynb
-part_D_30d_atm_straddle_strategy_backtest.ipynb
-```
+The improvement was also concentrated in specific market periods: **2018 and 2020 account for 92% of the summed nine-year MSE improvement**. The annual-weighted MSE difference had an unadjusted 95% interval of approximately **[−0.066849, +0.000026]**, which includes zero. Results are selected from an evaluated model grid and should not be described as independently confirmed superiority.
 
-These correspond to the logical Part A to Part D workflow described below.
+### Other findings
 
-## Notebook workflow
+- **Simulation transfer:** On average, successfully trained Heston/lifted-Heston pretrained policies had lower MSE than market-only policies, but the estimated difference was imprecise. Additional fine-tuning of the output layer or full network changed MSE very little.
+- **Model complexity:** Lifted Heston provided the leading policy, but its average advantage over Heston was small and uncertain. A more expressive volatility model is not automatically a better hedge.
+- **Maturity pooling:** On a *matched one-month evaluation sample*, parameter sharing improved the simulation-pretrained policies in several specifications. In contrast, the **market-only, one-month-specific** policy performed better than its pooled alternatives. Pooling creates a bias–variance trade-off, not a guaranteed gain from more observations.
+- **Costs and horizon:** The leading policy's share of episodes with lower squared error fell as assumed trading costs increased, particularly for shorter-dated options. Results depend on maturity, trade frequency and the risk objective.
 
-### Part A: Calibration and seed construction
+These findings are specific to the tested loss function, model class, sample, assumptions and benchmark implementations.
 
-**Purpose:** clean option-market data, construct calibration surfaces, calibrate classical Heston and lifted Heston models, and export the episode seeds used by the hedging experiment.
+---
 
-Main tasks:
+## Experimental design
 
-- Load CRSP/SPX and OptionMetrics-style input data.
-- Clean and filter option chains.
-- Apply liquidity, spread, and maturity filters.
-- Use put-call parity diagnostics where appropriate.
-- Focus on the tighter OTM side of the market.
-- Screen for static-arbitrage issues.
-- Apply no-arbitrage repair where needed.
-- Construct calibration targets.
-- Fit classical Heston and lifted Heston models.
-- Export episode seeds and calibration summaries.
-
-The final seed panel includes three experiment families:
-
-| Experiment family | Description | Seeds |
-|---|---|---:|
-| `baseline_local` | 2w, 1m and 2m traded buckets with local calibration | 54 |
-| `baseline_wide` | same traded buckets but wider calibration surface | 54 |
-| `short_end_local` | 1w and 2w traded buckets with local calibration | 36 |
-
-Total: **144 episode seeds**.
-
-### Part B: Deep hedging experiment
-
-**Purpose:** evaluate hedge policies out of sample on simulated paths generated from calibrated Heston and lifted Heston worlds.
-
-Main tasks:
-
-- Load Part A episode seeds.
-- Create chronological train/validation/test splits.
-- Simulate paths under calibrated Heston and lifted Heston settings.
-- Evaluate benchmark policies:
-  - unhedged straddle;
-  - Black-Scholes delta hedge;
-  - model/state-vol delta hedge;
-  - other delta-style benchmark rules where available.
-- Train learned hedge policies.
-- Train a tail-aware learned hedge with greater emphasis on downside outcomes.
-- Evaluate performance across transaction-cost and hedge-frequency grids.
-- Produce seed-level, experiment-level, bucket-level and regime-level summaries.
-- Run date-clustered bootstrap inference.
-- Assess training stability across repeated random initialisations.
-
-The final Part B configuration evaluates:
-
-- **16 robustness scenarios** per experiment;
-- **4 transaction-cost levels**: 0.25, 0.5, 1.0 and 2.0 bps;
-- **4 hedge frequencies**: 0.5, 1, 2 and 4 adjustments per day;
-- **10,000 paths** for test evaluation;
-- **5 training runs** for learned policies.
-
-### Part C: Sell-side credibility and robustness audit
-
-**Purpose:** test whether the project would survive the sort of practical questions asked by a derivatives, quant research, or sell-side desk.
-
-Main tasks:
-
-- Load Part A and Part B outputs.
-- Replay a real-market SPX path as an anchor check.
-- Audit calibration stability and runtime.
-- Check whether the learned hedge is merely “trading more”.
-- Review turnover discipline.
-- Assess training stability.
-- Review clustered-bootstrap evidence.
-- Summarise desk-relevant strengths and weaknesses.
-
-This section is designed to address practical objections such as:
-
-- Are the results only simulated-path artefacts?
-- Is the calibration too slow or unstable?
-- Does the learned hedge just trade aggressively and pay the cost later?
-- Are the results stable across random seeds and dates?
-- Would the methodology be credible to a finance practitioner?
-
-### Part D: 30-day ATM straddle strategy backtest
-
-**Purpose:** connect the model and policy results to a more recognisable trading-strategy setting: rolling 30-day ATM SPX straddles.
-
-Main tasks:
-
-- Select the strongest Part B model/policy combination.
-- Build a rolling 30-day ATM straddle sample.
-- Implement pricing and delta helpers.
-- Replay a realised 30-day delta-hedged strategy.
-- Compare against benchmark strategy outputs.
-- Produce strategy diagnostics and summary files.
-
-Part D is not a replacement for the simulated deep-hedging experiment. It is a practical bridge showing how the best-performing policy insights relate to a more familiar implementable straddle strategy.
-
-## Input data
-
-The full raw input datasets are **not recommended for direct GitHub storage** because they may be too large for GitHub and Git LFS limits, and may be subject to licensing restrictions.
-
-Expected local raw data files may include:
-
-```text
-CRSP S&P 2010 - 2024.csv
-CRSP S&P 2010 - 2024.parquet
-OptionMetrics ATM IV 2010 - 2025.csv
-OptionMetrics ATM IV 2010 - 2025.parquet
-```
-
-Depending on the notebook version, alternative names may appear, for example:
-
-```text
-crsp_sp_2010_2024.csv
-crsp_sp_2010_2024.parquet
-optionmetrics_atm_iv_2010_2025.csv
-optionmetrics_atm_iv_2010_2025.parquet
-```
-
-Place the required data files in the expected local directory before running the notebooks. If you rename files, update the path variables at the top of each notebook.
-
-## Data availability
-
-The raw CRSP and OptionMetrics data are not included in the recommended public repository structure.
-
-Suggested approach:
-
-- Keep full raw datasets locally.
-- Add small sample files only if needed to demonstrate notebook structure.
-- Store large licensed data outside GitHub.
-- Use `.gitignore` to prevent accidental commits of raw data and generated outputs.
-
-Recommended `.gitignore` entries:
-
-```gitignore
-# Large raw data
-CRSP S&P 2010 - 2024.csv
-CRSP S&P 2010 - 2024.parquet
-OptionMetrics ATM IV 2010 - 2025.csv
-OptionMetrics ATM IV 2010 - 2025.parquet
-*.parquet
-
-# Generated calibration and hedging outputs
-project/lifted_heston_calibration_outputs/
-lifted_heston_calibration_outputs/
-outputs/
-*.png
-
-# Jupyter / Python
-.ipynb_checkpoints/
-__pycache__/
-*.py[cod]
-
-# Environments
-.venv/
-venv/
-env/
-.env
-
-# OS / editor
-.DS_Store
-Thumbs.db
-.vscode/
-.idea/
-```
-
-If using Git LFS for smaller data files, track them deliberately:
-
-```bash
-git lfs install
-git lfs track "*.csv"
-git lfs track "*.parquet"
-git add .gitattributes
-```
-
-Do **not** rely on Git LFS for very large multi-GB raw files unless you have checked the hosting limits first. GitHub has a talent for waiting until the end of an upload before saying “no”. Charming little goblin.
-
-## Key generated outputs
-
-Depending on the notebook version, Part A may generate files such as:
-
-```text
-episode_seeds_v15_short_wide.csv
-episode_fit_summaries_v15_short_wide.csv
-episode_seed_selection_diagnostics_v15_short_wide.csv
-calibration_meta.json
-calibration_targets.csv
-fit_summary.csv
-heston_fit.csv
-heston_params.json
-lifted_fit.csv
-lifted_params.json
-iv_surface_compare.csv
-kernel_diagnostics.csv
-parity_detail.csv
-parity_summary.csv
-surface_noarb_detail.csv
-surface_noarb_summary.json
-target_diagnostics.csv
-```
-
-Part B may generate:
-
-```text
-part_b_v9_summary_results.csv
-part_b_v9_seed_results.csv
-part_b_v9_seed_results_raw.csv
-part_b_v9_bootstrap_ci.csv
-part_b_v9_bucket_summary_results.csv
-part_b_v9_regime_summary_results.csv
-part_b_v9_training_stability_results.csv
-```
-
-Part C may generate:
-
-```text
-part_c_sell_side_audit_summary.csv
-```
-
-Part D may generate:
-
-```text
-part_d_30d_atm_straddle_strategy_panel.csv
-part_d_30d_atm_straddle_strategy_summary.csv
-part_d_30d_atm_straddle_strategy_diagnostics.csv
-```
-
-Most generated files should be excluded from version control unless they are small, final, and directly needed to reproduce the dissertation tables.
-
-## Main evaluation metrics
-
-The final evaluation focuses on:
-
-| Metric | Meaning |
+| Dimension | Final dissertation specification |
 |---|---|
-| Mean residual P&L vs unhedged | Average economic gain relative to leaving the straddle unhedged |
-| Raw P&L variance | Dispersion of hedging outcomes |
-| Mean turnover | Trading intensity and cost exposure |
-| 5% CVaR | Downside-tail performance |
-| Bootstrap confidence intervals | Statistical support clustered by trade date |
-| Training-run standard deviation | Stability across random initialisations |
+| Liability | One **short near-ATM SPX call–put straddle** per episode |
+| Hedge | Dynamic stock-equivalent inventory; the option liability is not traded after entry |
+| Entry maturities | **1W, 2W, 1M, 2M, 3M** |
+| Market inputs | Historical SPX option quotes, index observations, rates/dividends and derived implied-volatility-surface features |
+| Policy information | Observable contract, return, surface, previous-inventory, time and cost variables; **no latent simulator variance/factors** |
+| Decision/execution timing | Observe close at **t**, submit the hedge decision and execute at the next recorded close **t+1**; option and initial hedge enter together under the final timing convention |
+| Training sources | Black–Scholes, Heston, lifted-Heston simulation; historical-market-only control |
+| Neural variants | **27 simulation-source × fine-tuning × pooling combinations**, plus **3 market-only** pooling variants |
+| Neural policy | Bounded residual correction to a Black–Scholes-delta anchor; current-state MLP family in the main factorial comparison |
+| Pooling | Dedicated **1M** estimator; five-maturity shared estimator; shared representation with maturity-specific output heads |
+| Selection and testing | Chronological walk-forward protocol; **18-month trailing market training** with subsequent annual evaluation and support thresholds |
+| Out-of-sample period | **2016–2024**, nine eligible annual evaluation years |
+| Evaluation | **2,030 straddle episodes** across **462 entry dates**; episode-level accounting and year-aware inference |
+| Primary objective | Premium-normalised terminal **MSE** |
+| Secondary outcomes | RMSE, MAE, bias, ES95, turnover, trading costs, mean P&L, maturity/cost/regime sensitivity |
+| Costs | **1 bp primary**, with **5 and 10 bp** robustness comparisons |
 
-The project deliberately avoids relying only on raw mean P&L, because that can mix entry pricing effects with hedging quality. Humanity occasionally learns.
+The final comparison uses common annual test windows and underlying data contracts. Because a dedicated 1M model is evaluated only on 1M liabilities, **pooling methods must be compared on their shared 1M episode panel**; an all-maturity pooled score is not directly comparable to a 1M-specific score.
 
-## Headline findings
+### Why the execution convention matters
 
-### 1. Learned hedging outperforms delta-style benchmarks
+This is a **daily close-to-close** study, not high-frequency trading. A decision based on the closing option surface at date `t` cannot be credited with a same-close execution after observing that close. The final pipeline uses a next-session execution proxy consistently in simulation, market training, validation, benchmarks and reported P&L.
 
-Across the main experiments, the standard learned hedge is the strongest overall policy when mean residual P&L, variance, turnover and CVaR are considered jointly.
+The **SPX index close is not directly tradable**. Stock-hedge P&L calculated using SPX levels is an economic proxy, not evidence of executable futures or ETF fills. A deployment study would need timestamped SPY/futures prices, basis, financing, margin, liquidity and market impact.
 
-In the **baseline local Heston world**, the standard learned hedge achieves:
+---
 
-| Metric | Standard learned hedge | Unhedged benchmark |
-|---|---:|---:|
-| Mean residual P&L vs unhedged | 4.29 | 0.00 |
-| Raw P&L variance | 4,458 | 39,436 |
-| 5% CVaR | -124.3 | -213.8 |
+## Research pipeline and source notebooks
 
-In the **baseline local lifted world**, the standard learned hedge achieves:
+The dissertation involved more than its final hedging notebook. The recovered July–August notebooks cover **market data, calibration, simulation, timing reconstruction, policy evaluation and forensic/financial diagnostics**.
 
-| Metric | Standard learned hedge | Unhedged benchmark |
-|---|---:|---:|
-| Mean residual P&L vs unhedged | 20.99 | 0.00 |
-| Raw P&L variance | 28,624 | 70,438 |
-| 5% CVaR | -206.0 | -221.8 |
+The titles below are **curation targets from the recovered research archive**. They are *not* an assertion that every notebook is already committed to this repository or that the files can be run consecutively without adapting their cache and data contracts.
 
-### 2. The learned-hedge gain is larger under lifted Heston
+| Stage | Recovered artifact | Role and release status |
+|---|---|---|
+| 1. Empirical panel and calibration | `01_calibration_full_integrated_H035_H025.ipynb` | Integrated Heston/lifted-Heston calibration, surface diagnostics and earlier evaluation; **executed historical artifact** |
+| 2. Timing reconstruction | `02_timing_correct_1m_banks.ipynb` | Rebuilds 1M observable episode banks without recalibration; **saved copy has no execution outputs** |
+| 3. Five-maturity simulation | `03_build_h035_5bucket_simulations.ipynb` | Builds Black–Scholes/Heston/lifted-Heston close-to-close episodes for five maturity buckets; **saved copy has no execution outputs** |
+| 4. Model-delta audit | `04_forensic_heston_lifted_delta_audit.ipynb` | Diagnoses maturity-unit, execution, model-state and calibration issues in model-based deltas; **executed diagnostic artifact** |
+| 5. Final hedging experiment | `05_final_factorial_user_august.ipynb` | User-retained August final factorial experiment and exported results; **executed research artifact** |
+| 6. Financial/statistical diagnostics | `06_august_diagnostic_review.ipynb` | Reporting-only plots and checks from locked results; **executed; does not refit models** |
+| 7. Subsequent review | `07_august_review_implemented.ipynb` | Later reviewed implementation for version comparison; **not assumed automatically authoritative** |
 
-The lifted-Heston world consistently gives the learned hedge more room to add value. This is one of the clearest empirical findings: the residual-P&L advantage is materially larger under lifted Heston than under classical Heston across the main experiment families.
+The original July notebook additionally includes volatility-surface preparation, forward-variance fitting, calibration-diagnostic plots, parameter-stability analysis and simulation checks. The separate diagnostic review covers terminal-loss exceedance curves, turnover, P&L decomposition, regimes, cost sensitivity, training-seed stability and calendar/cohort support.
 
-### 3. Wide calibration does not overturn the main result
+**Provenance:** The table records recovered versions, not a validated merged software release. Some notebooks duplicate upstream code, contain historical design revisions, or require locally cached calibration outputs. In particular, **H = 0.25 and H = 0.35 experiments must not be mixed**. The submitted headline comparison belongs to the final **H = 0.35** evidence set.
 
-The baseline wide-calibration experiment asks whether the result depends on a narrow local calibration window.
+### A relevant forensic caveat
 
-In the lifted world, the standard learned hedge remains strong:
+A separate July audit found a **maturity-unit error in an earlier Heston model-delta implementation** and additional state-alignment concerns for lifted-Heston delta. Corrected and uncorrected model-delta results must not be conflated. The headline **neural versus Black–Scholes** numbers above come from the dissertation's reported factorial comparison; that comparison does **not** depend on a claim that Heston or lifted-Heston delta was implemented flawlessly. The model-based baselines require independent reconciliation before strong conclusions are drawn from their relative ranking.
 
-| Experiment | Average residual P&L |
-|---|---:|
-| Baseline local lifted | 20.99 |
-| Baseline wide lifted | 21.60 |
+---
 
-The wide-calibration setup is more demanding and increases variance, but the core conclusion survives.
+## Reproduction and data availability
 
-### 4. Short-end trades are harder to monetise
+### What is available
 
-The short-end local experiment tests 1w and 2w traded maturities. The learned hedge still outperforms benchmark delta policies, but gains are much smaller:
+The archived notebooks contain the model definitions, data-processing logic, simulation and training protocols, evaluation code, diagnostic procedures and some **saved execution outputs**. They provide inspectable methodological evidence.
 
-| World | Standard learned hedge residual P&L |
-|---|---:|
-| Short-end Heston | 0.57 |
-| Short-end lifted | 3.25 |
+### What is not currently supplied
 
-This does **not** support the simplistic claim that shorter maturity automatically strengthens the value of lifted-Heston-style state information.
+- **Licensed raw market data:** OptionMetrics IvyDB US and CRSP inputs are not redistributed.
+- **All upstream calibration caches, simulation banks and fitted checkpoints:** Some notebooks rely on persisted local files absent from a clean checkout.
+- **A fully validated, from-scratch build:** The recovered notebooks have not all been rerun together under a single pinned environment. The five-bucket bank builder and timing-rebuild copies have no saved execution outputs.
+- **A deployable execution backtest:** Next-close SPX accounting is not a live stock/futures fill study.
 
-### 5. Tail-aware learning gives a real risk-preference trade-off
+A full replication requires lawful access to the underlying market datasets, restoration or regeneration of the calibrated five-maturity panels, and verification of the exact frozen experiment signatures and output schemas. **Do not treat stored notebook figures as proof that a clean rerun has succeeded.**
 
-The tail-aware learned hedge behaves as intended. It often gives up some mean residual P&L in exchange for better downside protection.
+### Environment guidance
 
-In the baseline local Heston world:
-
-| Policy | Mean residual P&L | Variance | 5% CVaR |
-|---|---:|---:|---:|
-| Standard learned hedge | 4.29 | 4,458 | -124.3 |
-| Tail-aware learned hedge | -0.16 | 2,918 | -95.9 |
-
-In the baseline local lifted world:
-
-| Policy | Mean residual P&L | Variance | 5% CVaR |
-|---|---:|---:|---:|
-| Standard learned hedge | 20.99 | 28,624 | -206.0 |
-| Tail-aware learned hedge | 19.40 | 28,892 | -202.8 |
-
-This shows the machine-learning component is not just a black-box “beat delta” model. It can encode different economic objectives.
-
-### 6. More frequent hedging does not pay proportionately under costs
-
-The robustness grid supports the hypothesis that increasing hedge frequency raises turnover without producing a proportional economic gain.
-
-For example, in the baseline local Heston world, increasing frequency from 0.5 to 4 hedge adjustments per day causes standard learned hedge residual P&L to fall from 5.00 to 3.96 while turnover rises from 1.30 to 2.90.
-
-### 7. Bootstrap evidence supports the main result
-
-For the standard learned hedge in the baseline local experiment, the 95% date-clustered bootstrap interval for mean residual P&L is fully positive in:
-
-| World | Positive bootstrap scenarios |
-|---|---:|
-| Heston | 15 / 16 |
-| Lifted Heston | 16 / 16 |
-
-This supports the interpretation that the learned hedge has a genuine out-of-sample edge, especially in the lifted-Heston setting.
-
-## Installation
-
-Create a virtual environment:
+Use **Python 3.10+** and an isolated environment. The computational notebooks use standard numerical/data-science libraries including NumPy, pandas, SciPy, matplotlib, PyTorch and Parquet IO. Exact environment versions, device-specific requirements and memory constraints still need to be extracted and locked from the selected final notebooks.
 
 ```bash
 python -m venv .venv
+# macOS/Linux: source .venv/bin/activate
+# Windows PowerShell: .venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
 ```
 
-Activate it.
+**Important:** The repository's existing `requirements.txt` was written for an earlier calibration notebook and **does not install PyTorch**. The command above is therefore an environment starting point, **not a verified complete setup for the final factorial experiment**. A reconciled, pinned requirements or environment lock file is a publication task.
 
-On Windows PowerShell:
+### Data and privacy
 
-```powershell
-.\.venv\Scripts\Activate.ps1
-```
+Raw OptionMetrics, CRSP/WRDS extracts and reconstructed proprietary quote panels should not be committed or distributed without checking their licence terms. Notebook outputs, embedded tables, checkpoint files, Git history and cached artifacts also require inspection; `.gitignore` does not protect data already committed. The public release should contain only code, original documentation and permissible derived summaries or figures.
 
-On macOS/Linux:
+---
 
-```bash
-source .venv/bin/activate
-```
+## Limitations and interpretation
 
-Install dependencies:
+1. **Objective choice matters.** The main objective is symmetric, zero-target squared terminal error. It penalises unusually large gains as well as losses, and does not directly maximise wealth or optimise one-sided capital risk. Utility, CVaR and capital-constrained objectives could rank policies differently.
+2. **Statistical evidence is limited.** Only nine annual periods supply largely independent market environments; large improvements were concentrated in 2018 and 2020. The leading policy was chosen among tested variants, and the reported interval crosses zero.
+3. **Simulation transfer is conditional.** Richer latent volatility dynamics need to produce useful *observable* option surfaces and return histories. Calibration fit, model delta accuracy and policy hedge value are distinct questions.
+4. **Partial pooling can help or hurt.** Shared parameters reduce estimation variance when maturity structures are related, but can introduce bias or negative transfer when the training distribution does not support a common mapping.
+5. **Some optimisation runs failed.** The dissertation flags unsuccessful Black–Scholes-pretrained runs; they cannot be treated as successful evidence about fine-tuning or pooling without retraining and diagnostics.
+6. **Execution is stylised.** The study hedges with an index-close proxy at daily frequency, without timestamped implementable fills, exchange fees, funding/margin treatment or full market-impact modelling.
+7. **The archive is not yet a production-quality package.** The recovered stages need explicit data licences, dependency pinning, executable smoke tests, cache-provenance checks and independent replication before being advertised as fully reproducible.
 
-```bash
-pip install numpy pandas scipy matplotlib seaborn scikit-learn statsmodels pyarrow fastparquet numba tqdm joblib optuna torch jupyter
-```
+**Conclusion:** The central contribution is not a general claim that neural networks outperform delta hedging. It is an empirical decomposition of **which financial risk a learned hedge reduces, what economic performance it sacrifices, and how the training distribution and maturity sharing affect the result**.
 
-Depending on the final notebook version, you may also need:
+---
 
-```bash
-pip install openpyxl xlrd
-```
+## Context and references
 
-For GPU-accelerated PyTorch, install the appropriate PyTorch build for your system rather than relying blindly on the default pip install. Blindly installing ML packages and hoping CUDA behaves is how people discover new emotions.
+The project builds on derivatives hedging, stochastic volatility, simulation-based learning and empirical deep hedging. Selected references from the dissertation include:
 
-## Running the notebooks
+- Black, F. & Scholes, M. (1973). *The Pricing of Options and Corporate Liabilities.* Journal of Political Economy.
+- Heston, S. (1993). *A Closed-Form Solution for Options with Stochastic Volatility.* Review of Financial Studies.
+- Whalley, A. & Wilmott, P. (1997). *An Asymptotic Analysis of an Optimal Hedging Model for Option Pricing with Transaction Costs.* Mathematical Finance.
+- Bühler, H., Gonon, L., Teichmann, J. & Wood, B. (2019). [*Deep Hedging.*](https://doi.org/10.1080/14697688.2019.1571683) Quantitative Finance.
+- Abi Jaber, E. (2019). *Lifting the Heston Model.* Quantitative Finance.
+- Wiese, M., Bai, L., Wood, B. & Buehler, H. (2019). [*Deep Hedging: Learning to Simulate Equity Option Markets.*](https://arxiv.org/abs/1911.01700)
+- Mikkilä, O. & Kanniainen, J. (2023). *Empirical Deep Hedging.* Quantitative Finance.
+- Abi Jaber, E. & Li, S. (2025). *Volatility Models in Practice: Rough, Path-dependent or Markovian?* Mathematical Finance.
 
-Run the notebooks in order:
+### Related ongoing research
 
-```text
-1. Part_A_Calibration.ipynb
-2. Part_B_Deep_Hedging.ipynb
-3. Part_C_Robustness_Checks.ipynb
-4. part_D_Strategy_Backtest.ipynb
-```
+Following the dissertation, the research programme has expanded to **stronger regression and nonlinear baselines, exotic-payoff hedging, simulation-to-market transfer, portfolio-level stochastic control, model predictive control (MPC), continuation-value learning and policy distillation**. These experiments are **subsequent exploratory work**, use different designs and benchmarks, and **are not evidence for the dissertation's 16.3% result**. They should be documented in a separate, clearly versioned research repository.
 
-Recommended workflow:
+---
 
-1. Confirm raw data paths in Part A.
-2. Run Part A to generate calibration outputs and episode seeds.
-3. Run Part B using the Part A seed file.
-4. Run Part C after Part B outputs exist.
-5. Run Part D after the Part B summary/seed outputs are available.
+## Author and acknowledgement
 
-If using versioned notebook names, the equivalent order is:
+**Lewis Hikari Kawase Kennedy**  
+MSc Finance and Machine Learning · Queen Mary University of London
 
-```text
-1. part_A_v16_short_and_wide_fiterrorfix.ipynb
-2. part_B_v9_short_and_wide.ipynb
-3. part_C_sell_side_credibility_audit.ipynb
-4. part_D_30d_atm_straddle_strategy_backtest.ipynb
-```
+Dissertation supervision: **Dr Katerina Panopoulou**. Thanks also to dissertation teaching assistant **Denys Iliasov** and the School of Economics and Finance.
 
-## Reproducibility notes
-
-The project uses chronological train/validation/test splits by trade date and repeated learned-hedge training runs. To improve reproducibility:
-
-- Fix random seeds before simulation and model training.
-- Keep generated seed files from Part A if you want to reproduce a particular Part B run.
-- Avoid manually editing intermediate CSV files.
-- Record transaction-cost and hedge-frequency settings.
-- Save package versions for any final dissertation run.
-
-For a final archival version, consider exporting:
-
-```bash
-pip freeze > requirements.txt
-```
-
-## Practical interpretation
-
-The results suggest that learned hedging is most valuable when the volatility-state representation is rich enough to create useful hedging information, but not so complicated that the experiment becomes computational mythology.
-
-The strongest dissertation narrative is:
-
-1. Classical Heston may fit more cleanly in some cross-sectional calibration settings.
-2. Lifted Heston still creates a richer state environment for downstream hedging.
-3. Learned hedging materially improves residual P&L and risk metrics relative to simple delta benchmarks.
-4. The advantage is largest in lifted-Heston worlds.
-5. Transaction costs make naive frequent delta hedging unattractive.
-6. Tail-aware objectives allow the learned policy to express different risk preferences.
-
-This distinction between **pricing fit** and **hedging usefulness** is the project’s most important methodological point.
-
-## Limitations
-
-Important limitations include:
-
-- Raw OptionMetrics and CRSP data may be large, licensed, and difficult to distribute.
-- The seed panel is moderate rather than industrial-scale.
-- Calibration remains computationally expensive.
-- Lifted Heston is not always the strongest cross-sectional pricing model.
-- Simulated-path evidence still depends on model assumptions.
-- Short-end trades are harder to monetise than the theory alone might imply.
-- Results should not be interpreted as direct trading advice.
-
-## Suggested future work
-
-Possible extensions:
-
-- Increase the number of test dates and calibration seeds.
-- Add more maturity buckets.
-- Test alternative lifted-factor specifications.
-- Add explicit no-trade-band benchmark policies.
-- Compare against rough-Heston simulations directly.
-- Run a larger realised-data strategy backtest.
-- Explore SHAP or sensitivity-style diagnostics for the learned hedge.
-- Include realistic funding, margin and execution assumptions.
-
-## Documents
-
-Associated dissertation documents may include:
-
-```text
-Dissertation_Proposal.docx
-Progress_Report_19-04.docx
-progress_report_update_since_19-04.md
-dissertation_results_section.md
-results_and_progress_report.docx
-```
-
-These documents summarise the project design, progress, results and final interpretation.
-
-## Author
-
-Lewis Hikari Kawase Kennedy
-
-MSc Finance and Machine Learning  
-Queen Mary University of London
+*Academic research only; not investment advice.*
