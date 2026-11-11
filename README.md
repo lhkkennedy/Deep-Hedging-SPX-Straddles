@@ -97,19 +97,19 @@ The titles below are **curation targets from the recovered research archive**. T
 
 | Stage | Recovered artifact | Role and release status |
 |---|---|---|
-| 1. Empirical panel and calibration | `01_calibration_full_integrated_H035_H025.ipynb` | Integrated Heston/lifted-Heston calibration, surface diagnostics and earlier evaluation; **executed historical artifact** |
-| 2. Timing reconstruction | `02_timing_correct_1m_banks.ipynb` | Rebuilds 1M observable episode banks without recalibration; **saved copy has no execution outputs** |
-| 3. Five-maturity simulation | `03_build_h035_5bucket_simulations.ipynb` | Builds Black–Scholes/Heston/lifted-Heston close-to-close episodes for five maturity buckets; **saved copy has no execution outputs** |
-| 4. Model-delta audit | `04_forensic_heston_lifted_delta_audit.ipynb` | Diagnoses maturity-unit, execution, model-state and calibration issues in model-based deltas; **executed diagnostic artifact** |
-| 5. Final hedging experiment | `05_final_factorial_user_august.ipynb` | User-retained August final factorial experiment and exported results; **executed research artifact** |
-| 6. Financial/statistical diagnostics | `06_august_diagnostic_review.ipynb` | Reporting-only plots and checks from locked results; **executed; does not refit models** |
-| 7. Subsequent review | `07_august_review_implemented.ipynb` | Later reviewed implementation for version comparison; **not assumed automatically authoritative** |
+| 1. Empirical panel and calibration | [`01_calibration_full_integrated_H035_H025.ipynb`](notebooks/01_calibration_full_integrated_H035_H025.ipynb) | Integrated Heston/lifted-Heston calibration, surface diagnostics and earlier evaluation; **executed historical artifact** |
+| 2. Timing reconstruction | [`02_timing_correct_1m_banks.ipynb`](notebooks/02_timing_correct_1m_banks.ipynb) | Rebuilds 1M observable episode banks without recalibration; **saved copy has no execution outputs** |
+| 3. Five-maturity simulation | [`03_build_h035_5bucket_simulations.ipynb`](notebooks/03_build_h035_5bucket_simulations.ipynb) | Builds Black–Scholes/Heston/lifted-Heston close-to-close episodes for five maturity buckets; **saved copy has no execution outputs** |
+| 4. Model-delta audit | [`04_forensic_heston_lifted_delta_audit.ipynb`](notebooks/04_forensic_heston_lifted_delta_audit.ipynb) | Diagnoses maturity-unit, execution, model-state and calibration issues in model-based deltas; **executed diagnostic artifact** |
+| 5. Final hedging experiment | [`05_final_factorial_user_august.ipynb`](notebooks/05_final_factorial_user_august.ipynb) | User-retained August final factorial experiment and exported results; **executed research artifact** |
+| 6. Financial/statistical diagnostics | [`06_august_diagnostic_review.ipynb`](notebooks/06_august_diagnostic_review.ipynb) | Reporting-only plots and checks from locked results; **executed; does not refit models** |
+| 7. Subsequent review | [`07_august_review_implemented.ipynb`](notebooks/07_august_review_implemented.ipynb) | Later reviewed implementation for version comparison; **not assumed automatically authoritative** |
 
 The original July notebook additionally includes volatility-surface preparation, forward-variance fitting, calibration-diagnostic plots, parameter-stability analysis and simulation checks. The separate diagnostic review covers terminal-loss exceedance curves, turnover, P&L decomposition, regimes, cost sensitivity, training-seed stability and calendar/cohort support.
 
 **Provenance:** The table records recovered versions, not a validated merged software release. Some notebooks duplicate upstream code, contain historical design revisions, or require locally cached calibration outputs. In particular, **H = 0.25 and H = 0.35 experiments must not be mixed**. The submitted headline comparison belongs to the final **H = 0.35** evidence set.
 
-### A relevant forensic caveat
+> **Notebook output note:** Code, markdown and saved numeric/text outputs are preserved. Embedded image outputs were omitted from notebooks 01, 06 and 07 to keep the public versions manageable; the original executed copies remain in the author's research archive. The seven notebooks are recovered research artifacts, not a verified one-command reproduction pipeline. The older July notebook previously at the repository root is retained at [`archive/00_legacy_early_notebook.ipynb`](archive/00_legacy_early_notebook.ipynb).\n\n### A relevant forensic caveat
 
 A separate July audit found a **maturity-unit error in an earlier Heston model-delta implementation** and additional state-alignment concerns for lifted-Heston delta. Corrected and uncorrected model-delta results must not be conflated. The headline **neural versus Black–Scholes** numbers above come from the dissertation's reported factorial comparison; that comparison does **not** depend on a claim that Heston or lifted-Heston delta was implemented flawlessly. The model-based baselines require independent reconciliation before strong conclusions are drawn from their relative ranking.
 
